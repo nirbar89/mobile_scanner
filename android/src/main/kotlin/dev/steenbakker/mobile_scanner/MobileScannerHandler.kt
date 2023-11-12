@@ -10,11 +10,11 @@ import androidx.camera.core.ExperimentalGetImage
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import dev.steenbakker.mobile_scanner.objects.BarcodeFormats
 import dev.steenbakker.mobile_scanner.objects.DetectionSpeed
+import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.BinaryMessenger
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 import io.flutter.plugin.common.PluginRegistry.RequestPermissionsResultListener
-import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.view.TextureRegistry
 import java.io.File
 
@@ -24,14 +24,17 @@ class MobileScannerHandler(
     binaryMessenger: BinaryMessenger,
     private val permissions: MobileScannerPermissions,
     private val addPermissionListener: (RequestPermissionsResultListener) -> Unit,
-    textureRegistry: TextureRegistry): MethodChannel.MethodCallHandler {
+    textureRegistry: TextureRegistry
+) : MethodChannel.MethodCallHandler {
 
-    private val analyzerCallback: AnalyzerCallback = { barcodes: List<Map<String, Any?>>?->
+    private val analyzerCallback: AnalyzerCallback = { barcodes: List<Map<String, Any?>>? ->
         if (barcodes != null) {
-            barcodeHandler.publishEvent(mapOf(
-                "name" to "barcode",
-                "data" to barcodes
-            ))
+            barcodeHandler.publishEvent(
+                mapOf(
+                    "name" to "barcode",
+                    "data" to barcodes
+                )
+            )
         }
 
         Handler(Looper.getMainLooper()).post {
@@ -42,45 +45,75 @@ class MobileScannerHandler(
 
     private var analyzerResult: MethodChannel.Result? = null
 
-    private val callback: MobileScannerCallback = { barcodes: List<Map<String, Any?>>, image: ByteArray?, width: Int?, height: Int? ->
-        if (image != null) {
-            barcodeHandler.publishEvent(mapOf(
-                "name" to "barcode",
-                "data" to barcodes,
-                "image" to image,
-                "width" to width!!.toDouble(),
-                "height" to height!!.toDouble()
-            ))
-        } else {
-            barcodeHandler.publishEvent(mapOf(
-                "name" to "barcode",
-                "data" to barcodes
-            ))
+    private val callback: MobileScannerCallback =
+        { barcodes: List<Map<String, Any?>>, framePath: String?, width: Int?, height: Int? ->
+            if (framePath != null) {
+                barcodeHandler.publishEvent(
+                    mapOf(
+                        "name" to "barcode",
+                        "data" to barcodes,
+                        "framePath" to framePath,
+                        "width" to width!!.toDouble(),
+                        "height" to height!!.toDouble()
+                    )
+                )
+            } else {
+                barcodeHandler.publishEvent(
+                    mapOf(
+                        "name" to "barcode",
+                        "data" to barcodes
+                    )
+                )
+            }
         }
-    }
-
-    private val errorCallback: MobileScannerErrorCallback = {error: String ->
-        barcodeHandler.publishEvent(mapOf(
-            "name" to "error",
-            "data" to error,
-        ))
+    private val errorCallback: MobileScannerErrorCallback = { error: String ->
+        barcodeHandler.publishEvent(
+            mapOf(
+                "name" to "error",
+                "data" to error,
+            )
+        )
     }
 
     private var methodChannel: MethodChannel? = null
 
     private var mobileScanner: MobileScanner? = null
 
-    private val torchStateCallback: TorchStateCallback = {state: Int ->
+    private val torchStateCallback: TorchStateCallback = { state: Int ->
         barcodeHandler.publishEvent(mapOf("name" to "torchState", "data" to state))
     }
 
-    private val zoomScaleStateCallback: ZoomScaleStateCallback = {zoomScale: Double ->
+    private val zoomScaleStateCallback: ZoomScaleStateCallback = { zoomScale: Double ->
         barcodeHandler.publishEvent(mapOf("name" to "zoomScaleState", "data" to zoomScale))
     }
 
+    private val fileCallback: FileCallback =
+        { path: String?, type: Int?, rotationDegrees: Int? ->
+            if (path != null && type != null) {
+                val rotation = rotationDegrees ?: 0
+                barcodeHandler.publishEvent(
+                    mapOf(
+                        "name" to "file",
+                        "type" to type,
+                        "data" to path,
+                        "rotationDegrees" to rotation,
+                    )
+                )
+            } else {
+                barcodeHandler.publishEvent(
+                    mapOf(
+                        "name" to "file"
+                    )
+                )
+            }
+        }
+
+
     init {
-        methodChannel = MethodChannel(binaryMessenger,
-            "dev.steenbakker.mobile_scanner/scanner/method")
+        methodChannel = MethodChannel(
+            binaryMessenger,
+            "dev.steenbakker.mobile_scanner/scanner/method"
+        )
         methodChannel!!.setMethodCallHandler(this)
         mobileScanner = MobileScanner(activity, textureRegistry, callback, errorCallback)
     }
@@ -92,7 +125,7 @@ class MobileScannerHandler(
 
         val listener: RequestPermissionsResultListener? = permissions.getPermissionListener()
 
-        if(listener != null) {
+        if (listener != null) {
             activityPluginBinding.removeRequestPermissionsResultListener(listener)
         }
     }
@@ -108,16 +141,20 @@ class MobileScannerHandler(
             "request" -> permissions.requestPermission(
                 activity,
                 addPermissionListener,
-                object: MobileScannerPermissions.ResultCallback {
+                object : MobileScannerPermissions.ResultCallback {
                     override fun onResult(errorCode: String?, errorDescription: String?) {
-                        when(errorCode) {
+                        when (errorCode) {
                             null -> result.success(true)
                             MobileScannerPermissions.CAMERA_ACCESS_DENIED -> result.success(false)
                             else -> result.error(errorCode, errorDescription, null)
                         }
                     }
                 })
+
             "start" -> start(call, result)
+            "initVideoCamera" -> initVideoCamera(call, result)
+            "initImageCamera" -> initImageCamera(call, result)
+            "recordVideo" -> recordVideo(result)
             "torch" -> toggleTorch(call, result)
             "stop" -> stop(result)
             "analyzeImage" -> analyzeImage(call, result)
@@ -163,7 +200,7 @@ class MobileScannerHandler(
         val position =
             if (facing == 0) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
 
-        val detectionSpeed: DetectionSpeed = DetectionSpeed.values().first { it.intValue == speed}
+        val detectionSpeed: DetectionSpeed = DetectionSpeed.values().first { it.intValue == speed }
 
         mobileScanner!!.start(
             barcodeScannerOptions,
@@ -175,11 +212,13 @@ class MobileScannerHandler(
             zoomScaleStateCallback,
             mobileScannerStartedCallback = {
                 Handler(Looper.getMainLooper()).post {
-                    result.success(mapOf(
-                        "textureId" to it.id,
-                        "size" to mapOf("width" to it.width, "height" to it.height),
-                        "torchable" to it.hasFlashUnit
-                    ))
+                    result.success(
+                        mapOf(
+                            "textureId" to it.id,
+                            "size" to mapOf("width" to it.width, "height" to it.height),
+                            "torchable" to it.hasFlashUnit
+                        )
+                    )
                 }
             },
             mobileScannerErrorCallback = {
@@ -192,6 +231,7 @@ class MobileScannerHandler(
                                 null
                             )
                         }
+
                         is CameraError -> {
                             result.error(
                                 "MobileScanner",
@@ -199,6 +239,7 @@ class MobileScannerHandler(
                                 null
                             )
                         }
+
                         is NoCamera -> {
                             result.error(
                                 "MobileScanner",
@@ -206,10 +247,11 @@ class MobileScannerHandler(
                                 null
                             )
                         }
+
                         else -> {
                             result.error(
                                 "MobileScanner",
-                                "Unknown error occurred.",
+                                it.message,
                                 null
                             )
                         }
@@ -266,4 +308,130 @@ class MobileScannerHandler(
 
         result.success(null)
     }
+
+    private fun initVideoCamera(call: MethodCall, result: MethodChannel.Result) {
+        val facing: Int = call.argument<Int>("facing") ?: 0
+        val position =
+            if (facing == 0) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            mobileScanner!!.startVideoCamera(
+                position,
+                fileCallback,
+                mobileCaptureModeCallback = {
+                    result.success(
+                        mapOf(
+                            "mode" to it,
+                        )
+                    )
+                },
+            )
+
+        } catch (e: AlreadyStarted) {
+            result.error(
+                "MobileScanner",
+                "Called start() while already started",
+                null
+            )
+        } catch (e: NoCamera) {
+            result.error(
+                "MobileScanner",
+                "No camera found or failed to open camera!",
+                null
+            )
+        } catch (e: CameraError) {
+            result.error(
+                "MobileScanner",
+                "Error occurred when setting up camera!",
+                null
+            )
+        } catch (e: Exception) {
+            result.error(
+                "MobileScanner",
+                e.message,
+                null
+            )
+        }
+
+    }
+
+    private fun recordVideo(result: MethodChannel.Result) {
+        try {
+            mobileScanner!!.recordVideo(fileCallback, 90)
+
+        } catch (e: AlreadyStarted) {
+            result.error(
+                "MobileScanner",
+                "Called start() while already started",
+                null
+            )
+        } catch (e: NoCamera) {
+            result.error(
+                "MobileScanner",
+                "No camera found or failed to open camera!",
+                null
+            )
+        } catch (e: CameraError) {
+            result.error(
+                "MobileScanner",
+                "Error occurred when setting up camera!",
+                null
+            )
+        } catch (e: Exception) {
+            result.error(
+                "MobileScanner",
+                e.message,
+                null
+            )
+        }
+    }
+
+    private fun initImageCamera(call: MethodCall, result: MethodChannel.Result) {
+        val facing: Int = call.argument<Int>("facing") ?: 0
+        val scanImageWidth: Int = call.argument<Int>("scanImageWidth") ?: 400
+        val position =
+            if (facing == 0) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
+
+        try {
+            mobileScanner!!.startCaptureImage(
+                position,
+                scanImageWidth,
+                fileCallback,
+                mobileCaptureModeCallback = {
+                    result.success(
+                        mapOf(
+                            "mode" to it,
+                        )
+                    )
+                },
+            )
+
+        } catch (e: AlreadyStarted) {
+            result.error(
+                "MobileScanner",
+                "Called start() while already started",
+                null
+            )
+        } catch (e: NoCamera) {
+            result.error(
+                "MobileScanner",
+                "No camera found or failed to open camera!",
+                null
+            )
+        } catch (e: CameraError) {
+            result.error(
+                "MobileScanner",
+                "Error occurred when setting up camera!",
+                null
+            )
+        } catch (e: Exception) {
+            result.error(
+                "MobileScanner",
+                e.message,
+                null
+            )
+        }
+
+    }
+
 }

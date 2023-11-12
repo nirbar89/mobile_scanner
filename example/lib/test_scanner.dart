@@ -51,7 +51,6 @@ class TestScannerState
             fit: StackFit.expand,
             children: [
               MobileScanner(
-                fit: BoxFit.cover,
                 scanWindow: widget.scanWindow ? scanWindow : null,
                 controller: controller,
                 onScannerStarted: (arguments) {
@@ -90,6 +89,28 @@ class TestScannerState
                           child:     Icon(
                             Icons.image,
                             color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      Center(
+                        child: FittedBox(
+                          child:     IconButton(
+                            onPressed: () {  controller.startImageCamera(); },
+                            icon: const Icon(
+                              Icons.fiber_manual_record,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                      Center(
+                        child: FittedBox(
+                          child:     IconButton(
+                            onPressed: () {  controller.startCaptureVideo(); },
+                            icon: const Icon(
+                              Icons.play_arrow,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ),

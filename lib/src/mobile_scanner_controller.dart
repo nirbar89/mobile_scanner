@@ -1,11 +1,15 @@
 import 'dart:async';
 import 'dart:io';
+
 // ignore: unnecessary_import
 import 'dart:typed_data';
+
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:mobile_scanner/src/enums/file_type.dart';
+import 'package:mobile_scanner/src/objects/file_event.dart';
 
 /// The [MobileScannerController] holds all the logic of this plugin,
 /// where as the [MobileScanner] class is the frontend of this plugin.
@@ -74,11 +78,22 @@ class MobileScannerController {
   /// Currently only supported on Android.
   final Size? cameraResolution;
 
+
   /// Sets the barcode stream
   final StreamController<BarcodeCapture> _barcodesController =
       StreamController.broadcast();
 
   Stream<BarcodeCapture> get barcodes => _barcodesController.stream;
+
+  final StreamController<FileEvent> _filesController =
+      StreamController.broadcast();
+
+  Stream<FileEvent> get files => _filesController.stream;
+
+  final StreamController<MobileScannerException> _errorController =
+      StreamController.broadcast();
+
+  Stream<MobileScannerException> get errors => _errorController.stream;
 
   static const MethodChannel _methodChannel =
       MethodChannel('dev.steenbakker.mobile_scanner/scanner/method');
@@ -397,6 +412,8 @@ class MobileScannerController {
     stop();
     events?.cancel();
     _barcodesController.close();
+    _filesController.close();
+    _errorController.close();
   }
 
   /// Handles a returning event from the platform side
@@ -474,6 +491,15 @@ class MobileScannerController {
           errorCode: MobileScannerErrorCode.genericError,
           errorDetails: MobileScannerErrorDetails(message: data as String?),
         );
+      case 'file':
+        _filesController.add(
+          FileEvent(
+            path: data as String?,
+            fileType: FileType.values[event['type'] as int? ?? 0],
+            rotationDegrees: event['rotationDegrees'] as int?,
+          ),
+        );
+        break;
       default:
         throw UnimplementedError(name as String?);
     }
@@ -487,5 +513,60 @@ class MobileScannerController {
     }
 
     await _methodChannel.invokeMethod('updateScanWindow', {'rect': data});
+  }
+
+  Future<void> startCaptureVideo() async {
+    try {
+      await _methodChannel.invokeMapMethod<String, dynamic>(
+        'initVideoCamera',
+        {'facing': CameraFacing.back.index},
+      );
+    } catch (e) {
+      _errorController.add(
+        MobileScannerException(
+          errorCode: MobileScannerErrorCode.recordeError,
+          errorDetails: MobileScannerErrorDetails(
+            message: "Record video error",
+            details: e,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> recordVideo() async {
+    try {
+      await _methodChannel.invokeMethod('recordVideo');
+    } catch (e) {
+      _errorController.add(
+        MobileScannerException(
+          errorCode: MobileScannerErrorCode.captureError,
+          errorDetails: MobileScannerErrorDetails(
+            message: "Record video error",
+            details: e,
+          ),
+        ),
+      );
+    }
+  }
+
+  Future<void> startImageCamera() async {
+    try {
+      await _methodChannel.invokeMapMethod<String, dynamic>(
+        'initImageCamera',
+        {'facing': CameraFacing.front.index},
+      );
+
+    } catch (e) {
+      _errorController.add(
+        MobileScannerException(
+          errorCode: MobileScannerErrorCode.captureError,
+          errorDetails: MobileScannerErrorDetails(
+            message: "Capture image error",
+            details: e,
+          ),
+        ),
+      );
+    }
   }
 }

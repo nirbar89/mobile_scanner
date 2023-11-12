@@ -14,4 +14,8 @@ enum MobileScannerErrorCode {
 
   /// Scanning is unsupported on the current device.
   unsupported,
+
+  captureError,
+
+  recordeError,
 }
