@@ -8,8 +8,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:mobile_scanner/src/enums/file_type.dart';
-import 'package:mobile_scanner/src/objects/file_event.dart';
+import 'package:mobile_scanner/src/enums/detection_mode.dart';
 
 /// The [MobileScannerController] holds all the logic of this plugin,
 /// where as the [MobileScanner] class is the frontend of this plugin.
@@ -17,6 +16,7 @@ class MobileScannerController {
   MobileScannerController({
     this.facing = CameraFacing.back,
     this.detectionSpeed = DetectionSpeed.normal,
+    this.detectionMode = DetectionMode.barcodes,
     this.detectionTimeoutMs = 250,
     this.torchEnabled = false,
     this.formats,
@@ -52,6 +52,9 @@ class MobileScannerController {
   /// WARNING: DetectionSpeed.unrestricted can cause memory issues on some devices
   final DetectionSpeed detectionSpeed;
 
+  /// Sets the mode of detections.
+  final DetectionMode detectionMode;
+
   /// Sets the timeout, in milliseconds, of the scanner.
   ///
   /// This timeout is ignored if the [detectionSpeed]
@@ -85,10 +88,10 @@ class MobileScannerController {
 
   Stream<BarcodeCapture> get barcodes => _barcodesController.stream;
 
-  final StreamController<FileEvent> _filesController =
+  final StreamController<FileCapture> _filesController =
       StreamController.broadcast();
 
-  Stream<FileEvent> get files => _filesController.stream;
+  Stream<FileCapture> get files => _filesController.stream;
 
   final StreamController<MobileScannerException> _errorController =
       StreamController.broadcast();
@@ -151,6 +154,8 @@ class MobileScannerController {
     arguments['speed'] = detectionSpeed.rawValue;
     arguments['timeout'] = detectionTimeoutMs;
     arguments['returnImage'] = returnImage;
+    arguments['mode'] = detectionMode.rawValue;
+
 
     /*    if (scanWindow != null) {
       arguments['scanWindow'] = [
@@ -438,7 +443,7 @@ class MobileScannerController {
           BarcodeCapture(
             raw: data,
             barcodes: parsed,
-            image: event['image'] as Uint8List?,
+            framePath: event['framePath'] as String?,
             width: event['width'] as double?,
             height: event['height'] as double?,
           ),
@@ -493,7 +498,7 @@ class MobileScannerController {
         );
       case 'file':
         _filesController.add(
-          FileEvent(
+          FileCapture(
             path: data as String?,
             fileType: FileType.values[event['type'] as int? ?? 0],
             rotationDegrees: event['rotationDegrees'] as int?,
@@ -517,10 +522,7 @@ class MobileScannerController {
 
   Future<void> startCaptureVideo() async {
     try {
-      await _methodChannel.invokeMapMethod<String, dynamic>(
-        'initVideoCamera',
-        {'facing': CameraFacing.back.index},
-      );
+      await _methodChannel.invokeMethod('startVideoCamera');
     } catch (e) {
       _errorController.add(
         MobileScannerException(

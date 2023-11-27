@@ -15,6 +15,8 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
     /// The points for the scan window.
     static var scanWindow: [CGFloat]?
     
+    static var barcodeDetected: Bool = false
+    
     private static func isBarcodeInScanWindow(barcode: Barcode, imageSize: CGSize) -> Bool {
         let scanwindow = MobileScannerPlugin.scanWindow!
         let barcodeminX = barcode.cornerPoints![0].cgPointValue.x
@@ -49,8 +51,11 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
                         return barcode.data
                     }
                 }
-                if (!barcodesMap.isEmpty) {
-                    barcodeHandler.publishEvent(["name": "barcode", "data": barcodesMap, "image": FlutterStandardTypedData(bytes: image.jpegData(compressionQuality: 0.8)!), "width": image.size.width, "height": image.size.height])
+                if (!barcodesMap.isEmpty && barcodesMap.count == 1) {
+                    MobileScannerPlugin.barcodeDetected = true
+                   var path =  MobileScannerPlugin.saveJpg(image)
+                    
+                    barcodeHandler.publishEvent(["name": "barcode", "data": barcodesMap, "framePath": path, "width": image.size.width, "height": image.size.height])
                 }
             } else if (error != nil){
                 barcodeHandler.publishEvent(["name": "error", "data": error!.localizedDescription])
@@ -59,10 +64,36 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
             barcodeHandler.publishEvent(["name": "torchState", "data": torchState])
         }, zoomScaleChangeCallback: { zoomScale in
             barcodeHandler.publishEvent(["name": "zoomScaleState", "data": zoomScale])
+        }, fileCallback: { path, type, rotationDegrees in
+            barcodeHandler.publishEvent(["name": "file", "type": type, "data": path, "rotationDegrees": rotationDegrees])
         })
         self.barcodeHandler = barcodeHandler
         super.init()
     }
+    
+    public static func saveJpg(_ image: UIImage) -> URL? {
+        
+        let targetSize = CGSize(width: 120, height: 160)
+
+        let scaledImage = image.scalePreservingAspectRatio(
+            targetSize: targetSize
+        )
+        
+        if let jpgData = scaledImage.jpegData(compressionQuality: 0.5),
+            let path = documentDirectoryPath()?.appendingPathComponent(ProcessInfo.processInfo.globallyUniqueString+".jpg") {
+            try? jpgData.write(to: path)
+            return path
+        }
+        return nil
+    }
+
+    public static func documentDirectoryPath() -> URL? {
+        let path = FileManager.default.urls(for: .documentDirectory,
+                                            in: .userDomainMask)
+        return path.first
+    }
+    
+    
     
     public static func register(with registrar: FlutterPluginRegistrar) {
         let channel = FlutterMethodChannel(name: "dev.steenbakker.mobile_scanner/scanner/method", binaryMessenger: registrar.messenger())
@@ -90,6 +121,12 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
             resetScale(call, result)
         case "updateScanWindow":
             updateScanWindow(call, result)
+        case "initVideoCamera":
+            initVideoCamera(result)
+        case "recordVideo":
+            recordVideo(result)
+        case "captureScanVerificationPhoto":
+            captureScanVerificationPhoto(result)
         default:
             result(FlutterMethodNotImplemented)
         }
@@ -102,8 +139,9 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
         let formats: Array<Int> = (call.arguments as! Dictionary<String, Any?>)["formats"] as? Array ?? []
         let returnImage: Bool = (call.arguments as! Dictionary<String, Any?>)["returnImage"] as? Bool ?? false
         let speed: Int = (call.arguments as! Dictionary<String, Any?>)["speed"] as? Int ?? 0
+        let detectMode: Int = (call.arguments as! Dictionary<String, Any?>)["mode"] as? Int ?? 1
         let timeoutMs: Int = (call.arguments as! Dictionary<String, Any?>)["timeout"] as? Int ?? 0
-        self.mobileScanner.timeoutSeconds = Double(timeoutMs / 1000)
+              self.mobileScanner.timeoutSeconds = Double(timeoutMs) / Double(1000)
 
         let formatList = formats.map { format in return BarcodeFormat(rawValue: format)}
         var barcodeOptions: BarcodeScannerOptions? = nil
@@ -115,12 +153,12 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
             }
             barcodeOptions = BarcodeScannerOptions(formats: barcodeFormats)
         }
-
         let position = facing == 0 ? AVCaptureDevice.Position.front : .back
         let detectionSpeed: DetectionSpeed = DetectionSpeed(rawValue: speed)!
+        let detectionMode: DetectionMode = DetectionMode(rawValue: detectMode)!
 
         do {
-            try mobileScanner.start(barcodeScannerOptions: barcodeOptions, returnImage: returnImage, cameraPosition: position, torch: torch, detectionSpeed: detectionSpeed) { parameters in
+            try mobileScanner.start(barcodeScannerOptions: barcodeOptions, returnImage: returnImage, cameraPosition: position, torch: torch, detectionSpeed: detectionSpeed, detectionMode: detectionMode) { parameters in
                 DispatchQueue.main.async {
                     result([
                         "textureId": parameters.textureId,
@@ -146,7 +184,76 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
                                 details: nil))
         }
     }
+    
+    
+    private func initVideoCamera(_ result: @escaping FlutterResult) {
+     
+        do {
+            try mobileScanner.initVideoCamera()
+        } catch MobileScannerError.alreadyStarted {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Called start() while already started!",
+                                details: nil))
+        } catch MobileScannerError.noCamera {
+            result(FlutterError(code: "MobileScanner",
+                                message: "No camera found or failed to open camera!",
+                                details: nil))
+        } catch MobileScannerError.cameraError(let error) {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Error occured when setting up camera!",
+                                details: error))
+        } catch {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Unknown error occured.",
+                                details: nil))
+        }
+    }
+  
+    
+    private func recordVideo(_ result: @escaping FlutterResult) {
+        do {
+            try mobileScanner.recordVideo()
+        } catch MobileScannerError.alreadyStarted {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Called start() while already started!",
+                                details: nil))
+        } catch MobileScannerError.noCamera {
+            result(FlutterError(code: "MobileScanner",
+                                message: "No camera found or failed to open camera!",
+                                details: nil))
+        } catch MobileScannerError.cameraError(let error) {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Error occured when setting up camera!",
+                                details: error))
+        } catch {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Unknown error occured.",
+                                details: nil))
+        }
+    }
 
+    private func captureScanVerificationPhoto(_ result: @escaping FlutterResult) {
+        do {
+            try mobileScanner.captureScanVerificationPhoto()
+        } catch MobileScannerError.alreadyStarted {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Called start() while already started!",
+                                details: nil))
+        } catch MobileScannerError.noCamera {
+            result(FlutterError(code: "MobileScanner",
+                                message: "No camera found or failed to open camera!",
+                                details: nil))
+        } catch MobileScannerError.cameraError(let error) {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Error occured when setting up camera!",
+                                details: error))
+        } catch {
+            result(FlutterError(code: "MobileScanner",
+                                message: "Unknown error occured.",
+                                details: nil))
+        }
+    }
+   
     /// Stops the mobileScanner and closes the texture.
     private func stop(_ result: @escaping FlutterResult) {
         do {

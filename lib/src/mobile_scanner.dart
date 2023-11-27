@@ -7,7 +7,6 @@ import 'package:mobile_scanner/src/enums/mobile_scanner_error_code.dart';
 import 'package:mobile_scanner/src/mobile_scanner_controller.dart';
 import 'package:mobile_scanner/src/mobile_scanner_exception.dart';
 import 'package:mobile_scanner/src/objects/barcode_capture.dart';
-import 'package:mobile_scanner/src/objects/file_event.dart';
 import 'package:mobile_scanner/src/objects/mobile_scanner_arguments.dart';
 import 'package:mobile_scanner/src/scan_window_calculation.dart';
 
@@ -46,7 +45,7 @@ class MobileScanner extends StatefulWidget {
 
   final void Function(MobileScannerException exception)? onException;
 
-  final void Function(FileEvent? fileCapture)? onFile;
+  final void Function(FileCapture? fileCapture)? onFile;
 
   /// The function that signals when the barcode scanner is started.
   final void Function(MobileScannerArguments? arguments)? onScannerStarted;
@@ -100,7 +99,7 @@ class _MobileScannerState extends State<MobileScanner>
     with WidgetsBindingObserver {
   /// The subscription that listens to barcode detection.
   StreamSubscription<BarcodeCapture>? _barcodesSubscription;
-  StreamSubscription<FileEvent>? _filesSubscription;
+  StreamSubscription<FileCapture>? _filesSubscription;
   StreamSubscription<MobileScannerException?>? _errorsSubscription;
 
   /// The internally managed controller.

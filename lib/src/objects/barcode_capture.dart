@@ -9,7 +9,7 @@ class BarcodeCapture {
   BarcodeCapture({
     this.barcodes = const <Barcode>[],
     double? height,
-    this.image,
+    this.framePath,
     this.raw,
     double? width,
   }) : size =
@@ -21,7 +21,7 @@ class BarcodeCapture {
   /// The bytes of the image that is embedded in the barcode.
   ///
   /// This null if [MobileScannerController.returnImage] is false.
-  final Uint8List? image;
+  final String? framePath;
 
   /// The raw data of the scanned barcode.
   final dynamic raw; // TODO: this should be `Object?` instead of dynamic
@@ -40,4 +40,16 @@ class BarcodeCapture {
   /// Prefer using `size.height` instead,
   /// as this getter will be removed in the future.
   double get height => size.height;
+}
+
+
+enum FileType{image, video}
+class FileCapture {
+  final FileType fileType;
+  final String? path;
+  final int? rotationDegrees;
+  FileCapture({required this.fileType,
+    required this.path,
+    this.rotationDegrees,
+  });
 }

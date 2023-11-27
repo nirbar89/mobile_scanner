@@ -14,20 +14,28 @@ import MLKitBarcodeScanning
 typealias MobileScannerCallback = ((Array<Barcode>?, Error?, UIImage) -> ())
 typealias TorchModeChangeCallback = ((Int?) -> ())
 typealias ZoomScaleChangeCallback = ((Double?) -> ())
+typealias FileCallback = ((String?, Int?, Int?) -> ())
 
-public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, FlutterTexture {
+public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate, FlutterTexture, AVCapturePhotoCaptureDelegate, AVCaptureFileOutputRecordingDelegate {
     /// Capture session of the camera
     var captureSession: AVCaptureSession!
 
     /// The selected camera
     var device: AVCaptureDevice!
+    
+    var audioDevice: AVCaptureDevice!
+    
+    var videoRecordOutput: AVCaptureMovieFileOutput!
+    
+    var stillImageOutput: AVCapturePhotoOutput!
 
     /// Barcode scanner for results
     var scanner = BarcodeScanner.barcodeScanner()
 
     /// Return image buffer with the Barcode event
     var returnImage: Bool = false
-
+    
+    private var isObserving = false
     /// Default position of camera
     var videoPosition: AVCaptureDevice.Position = AVCaptureDevice.Position.back
 
@@ -39,6 +47,8 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     /// When zoom scale is changes, this callback will be called
     let zoomScaleChangeCallback: ZoomScaleChangeCallback
+    
+    let fileCallback: FileCallback
 
     /// If provided, the Flutter registry will be used to send the output of the CaptureOutput to a Flutter texture.
     private let registry: FlutterTextureRegistry?
@@ -50,6 +60,8 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     private var textureId: Int64!
 
     var detectionSpeed: DetectionSpeed = DetectionSpeed.noDuplicates
+    
+    var detectionMode: DetectionMode = DetectionMode.barcodes
 
     private let backgroundQueue = DispatchQueue(label: "camera-handling")
 
@@ -61,11 +73,12 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     
     public var timeoutSeconds: Double = 0
 
-    init(registry: FlutterTextureRegistry?, mobileScannerCallback: @escaping MobileScannerCallback, torchModeChangeCallback: @escaping TorchModeChangeCallback, zoomScaleChangeCallback: @escaping ZoomScaleChangeCallback) {
+    init(registry: FlutterTextureRegistry?, mobileScannerCallback: @escaping MobileScannerCallback, torchModeChangeCallback: @escaping TorchModeChangeCallback, zoomScaleChangeCallback: @escaping ZoomScaleChangeCallback, fileCallback: @escaping FileCallback) {
         self.registry = registry
         self.mobileScannerCallback = mobileScannerCallback
         self.torchModeChangeCallback = torchModeChangeCallback
         self.zoomScaleChangeCallback = zoomScaleChangeCallback
+        self.fileCallback = fileCallback
         super.init()
     }
 
@@ -87,6 +100,19 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         AVCaptureDevice.requestAccess(for: .video, completionHandler: { result($0) })
     }
     
+    public func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
+            fileCallback(error == nil ? outputFileURL.absoluteString : nil, 1, nil)
+    }
+    
+   public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+       guard error == nil, let imageData = photo.fileDataRepresentation(), let image = UIImage(data: imageData) else {
+           fileCallback(nil, 0, nil)
+           return
+       }
+
+       let path = MobileScannerPlugin.saveJpg(image)
+       fileCallback(path?.absoluteString, 0, nil)
+        }
     /// Gets called when a new image is added to the buffer
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         guard let imageBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
@@ -96,8 +122,12 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         latestBuffer = imageBuffer
         registry?.textureFrameAvailable(textureId)
         
+        if(detectionMode == DetectionMode.noDetections){
+            return
+        }
+        
         let currentTime = Date().timeIntervalSince1970
-        let eligibleForScan = currentTime > nextScanTime && !imagesCurrentlyBeingProcessed
+        let eligibleForScan = currentTime > nextScanTime && !imagesCurrentlyBeingProcessed && !MobileScannerPlugin.barcodeDetected
         
         if ((detectionSpeed == DetectionSpeed.normal || detectionSpeed == DetectionSpeed.noDuplicates) && eligibleForScan || detectionSpeed == DetectionSpeed.unrestricted) {
 
@@ -115,7 +145,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
             scanner.process(image) { [self] barcodes, error in
                 imagesCurrentlyBeingProcessed = false
-                
+           
                 if (detectionSpeed == DetectionSpeed.noDuplicates) {
                     let newScannedBarcodes = barcodes?.compactMap({ barcode in
                         return barcode.rawValue
@@ -132,16 +162,21 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             }
         }
     }
+    
 
     /// Start scanning for barcodes
-    func start(barcodeScannerOptions: BarcodeScannerOptions?, returnImage: Bool, cameraPosition: AVCaptureDevice.Position, torch: Bool, detectionSpeed: DetectionSpeed, completion: @escaping (MobileScannerStartParameters) -> ()) throws {
+    func start(barcodeScannerOptions: BarcodeScannerOptions?, returnImage: Bool, cameraPosition: AVCaptureDevice.Position, torch: Bool, detectionSpeed: DetectionSpeed, detectionMode: DetectionMode, completion: @escaping (MobileScannerStartParameters) -> ()) throws {
         self.detectionSpeed = detectionSpeed
+        self.detectionMode = detectionMode
         if (device != nil) {
             throw MobileScannerError.alreadyStarted
         }
 
         barcodesString = nil
-        scanner = barcodeScannerOptions != nil ? BarcodeScanner.barcodeScanner(options: barcodeScannerOptions!) : BarcodeScanner.barcodeScanner()
+        if(barcodeScannerOptions != nil){
+            scanner = BarcodeScanner.barcodeScanner(options: barcodeScannerOptions!)
+        }
+       
         captureSession = AVCaptureSession()
         textureId = registry?.register(self)
 
@@ -158,7 +193,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
         device.addObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode), options: .new, context: nil)
         device.addObserver(self, forKeyPath: #keyPath(AVCaptureDevice.videoZoomFactor), options: .new, context: nil)
-
+        isObserving = true
         // Check the zoom factor at switching from ultra wide camera to wide camera.
         standardZoomFactor = 1
         if #available(iOS 13.0, *) {
@@ -254,7 +289,118 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             completion(MobileScannerStartParameters())
         }
     }
+    
+ 
+    func captureScanVerificationPhoto() throws {
+        barcodesString = nil
 
+        guard let captureSession = captureSession, let _ = device else {
+            throw MobileScannerError.alreadyStarted
+        }
+   
+        device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
+        device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.videoZoomFactor))
+        isObserving = false
+        
+        if let currentInput = captureSession.inputs.first {
+              captureSession.removeInput(currentInput)
+          }
+        
+        captureSession.beginConfiguration()
+        
+        let newCamera: AVCaptureDevice!
+
+        if #available(iOS 13.0, *) {
+            newCamera = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInTripleCamera, .builtInDualWideCamera, .builtInDualCamera, .builtInWideAngleCamera], mediaType: .video, position: AVCaptureDevice.Position.front).devices.first
+        } else {
+            newCamera = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInDualCamera, .builtInWideAngleCamera], mediaType: .video, position: AVCaptureDevice.Position.front).devices.first
+        }
+
+        if (newCamera == nil) {
+            throw MobileScannerError.noCamera
+        }
+        
+        // Add device input
+        do {
+            try newCamera.lockForConfiguration()
+            if newCamera.isFocusModeSupported(.continuousAutoFocus) {
+                newCamera.focusMode = .continuousAutoFocus
+            }
+            if #available(iOS 15.4, *) , newCamera.isFocusModeSupported(.autoFocus){
+                newCamera.automaticallyAdjustsFaceDrivenAutoFocusEnabled = false
+            }
+            newCamera.unlockForConfiguration()
+        } catch {}
+       
+        
+        // Add device input
+        do {
+            let input = try AVCaptureDeviceInput(device: newCamera)
+            captureSession.addInput(input)
+            device = newCamera
+            stillImageOutput = AVCapturePhotoOutput()
+                     if captureSession.canAddOutput(stillImageOutput) {
+                         captureSession.addOutput(stillImageOutput)
+                     }
+        } catch {
+            throw MobileScannerError.cameraError(error)
+        }
+        for output in captureSession.outputs {
+            for connection in output.connections {
+                connection.videoOrientation = .portrait
+                if connection.isVideoMirroringSupported {
+                    connection.isVideoMirrored = true
+                }
+            }
+        }
+        
+        
+        captureSession.commitConfiguration()
+        backgroundQueue.asyncAfter(deadline: .now() + 0.1) {
+            try? self.capturePhoto()
+        }
+    }
+    
+    func initVideoCamera() throws {
+        barcodesString = nil
+
+        guard let captureSession = captureSession, let _ = device else {
+            throw MobileScannerError.alreadyStarted
+        }
+   
+        captureSession.beginConfiguration()
+        
+        if #available(iOS 13.0, *) {
+            audioDevice = AVCaptureDevice.DiscoverySession(deviceTypes: [.builtInMicrophone], mediaType: .audio, position: AVCaptureDevice.Position.unspecified).devices.first
+        }
+
+        if (audioDevice == nil) {
+            throw MobileScannerError.noCamera
+        }
+
+        // Add device input
+        do {
+            let input = try AVCaptureDeviceInput(device: audioDevice)
+            captureSession.addInput(input)
+        
+            videoRecordOutput = AVCaptureMovieFileOutput()
+                     if captureSession.canAddOutput(videoRecordOutput) {
+                         captureSession.addOutput(videoRecordOutput)
+                     }
+        } catch {
+            throw MobileScannerError.cameraError(error)
+        }
+ 
+        if captureSession.canSetSessionPreset(.medium) {
+            captureSession.sessionPreset = .medium
+        }
+
+        captureSession.commitConfiguration()
+        backgroundQueue.asyncAfter(deadline: .now() + 0.1) {
+            try? self.recordVideo()
+        }
+    }
+    
     /// Stop scanning for barcodes
     func stop() throws {
         if (device == nil) {
@@ -269,8 +415,11 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
 
         latestBuffer = nil
-        device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
-        device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.videoZoomFactor))
+        
+        if(isObserving){
+            device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.torchMode))
+            device.removeObserver(self, forKeyPath: #keyPath(AVCaptureDevice.videoZoomFactor))
+        }
         registry?.unregisterTexture(textureId)
         textureId = nil
         captureSession = nil
@@ -347,7 +496,36 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             throw MobileScannerError.zoomError(error)
         }
     }
+    
+    func recordVideo() throws {
+        guard let captureSession = self.captureSession, captureSession.isRunning else {
+            throw MobileScannerError.noCamera
+        }
 
+        let paths = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)
+        let fileUrl = paths[0].appendingPathComponent(ProcessInfo.processInfo.globallyUniqueString+".mp4")
+        try? FileManager.default.removeItem(at: fileUrl)
+        videoRecordOutput.startRecording(to: fileUrl, recordingDelegate: self)
+        backgroundQueue.asyncAfter(deadline: .now() + 5) {
+            self.videoRecordOutput.stopRecording()
+        }
+      
+    }
+
+    func capturePhoto() throws {
+        guard let captureSession = self.captureSession, captureSession.isRunning else {
+            throw MobileScannerError.noCamera
+        }
+
+        guard let stillImageOutput = self.stillImageOutput else { return }
+        let capturePhotoSettings = AVCapturePhotoSettings()
+           capturePhotoSettings.isAutoStillImageStabilizationEnabled = true
+           capturePhotoSettings.isHighResolutionPhotoEnabled = false
+           capturePhotoSettings.flashMode = .off
+           stillImageOutput.capturePhoto(with: capturePhotoSettings, delegate: self)
+    }
+
+    
     /// Analyze a single image
     func analyzeImage(image: UIImage, position: AVCaptureDevice.Position, callback: @escaping BarcodeScanningCallback) {
         let image = VisionImage(image: image)
