@@ -101,7 +101,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
     
     public func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
-        fileCallback(error == nil ? outputFileURL.relativePath : nil, 1, nil)
+        fileCallback(error == nil ? outputFileURL.relativePath : nil, 1, 0)
     }
     
    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
@@ -111,7 +111,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
        }
 
        let path = MobileScannerPlugin.saveJpg(image)
-       fileCallback(path, 0, nil)
+       fileCallback(path, 0, 0)
         }
     /// Gets called when a new image is added to the buffer
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
@@ -127,7 +127,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
         
         let currentTime = Date().timeIntervalSince1970
-        let eligibleForScan = currentTime > nextScanTime && !imagesCurrentlyBeingProcessed && !MobileScannerPlugin.barcodeDetected
+        let eligibleForScan = currentTime > nextScanTime && !imagesCurrentlyBeingProcessed
         
         if ((detectionSpeed == DetectionSpeed.normal || detectionSpeed == DetectionSpeed.noDuplicates) && eligibleForScan || detectionSpeed == DetectionSpeed.unrestricted) {
 

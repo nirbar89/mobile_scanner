@@ -15,8 +15,6 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
     /// The points for the scan window.
     static var scanWindow: [CGFloat]?
     
-    static var barcodeDetected: Bool = false
-    
     private static func isBarcodeInScanWindow(barcode: Barcode, imageSize: CGSize) -> Bool {
         let scanwindow = MobileScannerPlugin.scanWindow!
         let barcodeminX = barcode.cornerPoints![0].cgPointValue.x
@@ -52,7 +50,6 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
                     }
                 }
                 if (!barcodesMap.isEmpty && barcodesMap.count == 1) {
-                    MobileScannerPlugin.barcodeDetected = true
                     let path =  MobileScannerPlugin.saveJpg(image)
                     
                     barcodeHandler.publishEvent(["name": "barcode", "data": barcodesMap, "framePath": path, "width": image.size.width, "height": image.size.height])
@@ -260,7 +257,6 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
     /// Stops the mobileScanner and closes the texture.
     private func stop(_ result: @escaping FlutterResult) {
         do {
-            MobileScannerPlugin.barcodeDetected = false
             try mobileScanner.stop()
         } catch {}
         result(nil)
