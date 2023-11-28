@@ -101,7 +101,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     }
     
     public func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
-            fileCallback(error == nil ? outputFileURL.absoluteString : nil, 1, nil)
+        fileCallback(error == nil ? outputFileURL.relativePath : nil, 1, nil)
     }
     
    public func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {

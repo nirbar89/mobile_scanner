@@ -53,7 +53,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
                 }
                 if (!barcodesMap.isEmpty && barcodesMap.count == 1) {
                     MobileScannerPlugin.barcodeDetected = true
-                   var path =  MobileScannerPlugin.saveJpg(image)
+                    let path =  MobileScannerPlugin.saveJpg(image)
                     
                     barcodeHandler.publishEvent(["name": "barcode", "data": barcodesMap, "framePath": path, "width": image.size.width, "height": image.size.height])
                 }
@@ -82,7 +82,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
         if let jpgData = scaledImage.jpegData(compressionQuality: 0.5),
             let path = documentDirectoryPath()?.appendingPathComponent(ProcessInfo.processInfo.globallyUniqueString+".jpg") {
             try? jpgData.write(to: path)
-            return path.absoluteString
+            return path.relativePath
         }
         return nil
     }
@@ -260,6 +260,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
     /// Stops the mobileScanner and closes the texture.
     private func stop(_ result: @escaping FlutterResult) {
         do {
+            MobileScannerPlugin.barcodeDetected = false
             try mobileScanner.stop()
         } catch {}
         result(nil)
