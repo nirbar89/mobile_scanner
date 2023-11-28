@@ -71,7 +71,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
         super.init()
     }
     
-    public static func saveJpg(_ image: UIImage) -> URL? {
+    public static func saveJpg(_ image: UIImage) -> String? {
         
         let targetSize = CGSize(width: 120, height: 160)
 
@@ -82,7 +82,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
         if let jpgData = scaledImage.jpegData(compressionQuality: 0.5),
             let path = documentDirectoryPath()?.appendingPathComponent(ProcessInfo.processInfo.globallyUniqueString+".jpg") {
             try? jpgData.write(to: path)
-            return path
+            return path.absoluteString
         }
         return nil
     }

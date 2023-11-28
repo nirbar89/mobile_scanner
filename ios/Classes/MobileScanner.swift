@@ -111,7 +111,7 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
        }
 
        let path = MobileScannerPlugin.saveJpg(image)
-       fileCallback(path?.absoluteString, 0, nil)
+       fileCallback(path, 0, nil)
         }
     /// Gets called when a new image is added to the buffer
     public func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
