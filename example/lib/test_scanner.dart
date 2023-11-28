@@ -62,6 +62,9 @@ class TestScannerState
                   return ScannerErrorWidget(error: error);
                 },
                 onDetect: onDetect,
+                onFile: (file){
+                  print("file: ${file?.path}");
+                },
               ),
               if(widget.scanWindow) Container(
                 decoration: ShapeDecoration(
@@ -95,7 +98,7 @@ class TestScannerState
                       Center(
                         child: FittedBox(
                           child:     IconButton(
-                            onPressed: () {  controller.startImageCamera(); },
+                            onPressed: () {  controller.recordVideo(); },
                             icon: const Icon(
                               Icons.fiber_manual_record,
                               color: Colors.white,
@@ -106,7 +109,7 @@ class TestScannerState
                       Center(
                         child: FittedBox(
                           child:     IconButton(
-                            onPressed: () {  controller.startCaptureVideo(); },
+                            onPressed: () {  controller.initVideoCamera(); },
                             icon: const Icon(
                               Icons.play_arrow,
                               color: Colors.white,

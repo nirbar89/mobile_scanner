@@ -190,6 +190,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
      
         do {
             try mobileScanner.initVideoCamera()
+            result(nil)
         } catch MobileScannerError.alreadyStarted {
             result(FlutterError(code: "MobileScanner",
                                 message: "Called start() while already started!",
@@ -213,6 +214,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
     private func recordVideo(_ result: @escaping FlutterResult) {
         do {
             try mobileScanner.recordVideo()
+            result(nil)
         } catch MobileScannerError.alreadyStarted {
             result(FlutterError(code: "MobileScanner",
                                 message: "Called start() while already started!",
@@ -235,6 +237,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
     private func captureScanVerificationPhoto(_ result: @escaping FlutterResult) {
         do {
             try mobileScanner.captureScanVerificationPhoto()
+            result(nil)
         } catch MobileScannerError.alreadyStarted {
             result(FlutterError(code: "MobileScanner",
                                 message: "Called start() while already started!",

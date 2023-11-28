@@ -520,9 +520,9 @@ class MobileScannerController {
     await _methodChannel.invokeMethod('updateScanWindow', {'rect': data});
   }
 
-  Future<void> startCaptureVideo() async {
+  Future<void> initVideoCamera() async {
     try {
-      await _methodChannel.invokeMethod('startVideoCamera');
+      await _methodChannel.invokeMethod('initVideoCamera');
     } catch (e) {
       _errorController.add(
         MobileScannerException(
@@ -552,12 +552,9 @@ class MobileScannerController {
     }
   }
 
-  Future<void> startImageCamera() async {
+  Future<void> captureScanVerificationPhoto() async {
     try {
-      await _methodChannel.invokeMapMethod<String, dynamic>(
-        'initImageCamera',
-        {'facing': CameraFacing.front.index},
-      );
+      await _methodChannel.invokeMethod('captureScanVerificationPhoto');
 
     } catch (e) {
       _errorController.add(

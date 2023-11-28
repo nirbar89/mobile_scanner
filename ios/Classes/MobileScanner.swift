@@ -384,6 +384,8 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             captureSession.addInput(input)
         
             videoRecordOutput = AVCaptureMovieFileOutput()
+           // videoRecordOutput.maxRecordedDuration = CMTime(seconds: 5, preferredTimescale: 1) TODO: Consider using in next version
+            
                      if captureSession.canAddOutput(videoRecordOutput) {
                          captureSession.addOutput(videoRecordOutput)
                      }
@@ -424,6 +426,9 @@ public class MobileScanner: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         textureId = nil
         captureSession = nil
         device = nil
+        audioDevice = nil
+        stillImageOutput = nil
+        videoRecordOutput = nil
     }
 
     /// Toggle the flashlight between on and off.

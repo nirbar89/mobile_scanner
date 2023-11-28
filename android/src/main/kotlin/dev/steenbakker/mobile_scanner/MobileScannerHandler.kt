@@ -153,7 +153,7 @@ class MobileScannerHandler(
 
             "start" -> start(call, result)
             "initVideoCamera" -> initVideoCamera(call, result)
-            "initImageCamera" -> initImageCamera(call, result)
+            "captureScanVerificationPhoto" -> captureScanVerificationPhoto(call, result)
             "recordVideo" -> recordVideo(result)
             "torch" -> toggleTorch(call, result)
             "stop" -> stop(result)
@@ -310,22 +310,8 @@ class MobileScannerHandler(
     }
 
     private fun initVideoCamera(call: MethodCall, result: MethodChannel.Result) {
-        val facing: Int = call.argument<Int>("facing") ?: 0
-        val position =
-            if (facing == 0) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
-
         try {
-            mobileScanner!!.startVideoCamera(
-                position,
-                fileCallback,
-                mobileCaptureModeCallback = {
-                    result.success(
-                        mapOf(
-                            "mode" to it,
-                        )
-                    )
-                },
-            )
+            mobileScanner!!.initVideoCamera(fileCallback)
 
         } catch (e: AlreadyStarted) {
             result.error(
@@ -386,24 +372,17 @@ class MobileScannerHandler(
         }
     }
 
-    private fun initImageCamera(call: MethodCall, result: MethodChannel.Result) {
+    private fun captureScanVerificationPhoto(call: MethodCall, result: MethodChannel.Result) {
         val facing: Int = call.argument<Int>("facing") ?: 0
         val scanImageWidth: Int = call.argument<Int>("scanImageWidth") ?: 400
         val position =
             if (facing == 0) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
 
         try {
-            mobileScanner!!.startCaptureImage(
+            mobileScanner!!.captureScanVerificationPhoto(
                 position,
                 scanImageWidth,
-                fileCallback,
-                mobileCaptureModeCallback = {
-                    result.success(
-                        mapOf(
-                            "mode" to it,
-                        )
-                    )
-                },
+                fileCallback
             )
 
         } catch (e: AlreadyStarted) {

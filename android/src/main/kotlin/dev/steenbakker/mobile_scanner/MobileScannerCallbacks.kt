@@ -9,4 +9,3 @@ typealias TorchStateCallback = (state: Int) -> Unit
 typealias ZoomScaleStateCallback = (zoomScale: Double) -> Unit
 typealias MobileScannerStartedCallback = (parameters: MobileScannerStartParameters) -> Unit
 typealias FileCallback = (path: String?, type: Int?, rotationDegrees: Int?) -> Unit
-typealias MobileCaptureModeCallback = (mode: Int) -> Unit

@@ -530,21 +530,8 @@ class MobileScanner(
 
 
 
-
-
-
-
-
-
-    fun startVideoCamera (
-        cameraPosition: CameraSelector,
-        fileCallback: FileCallback,
-        mobileCaptureModeCallback: MobileCaptureModeCallback,
-    ) {
-
-
-
-
+    fun initVideoCamera (
+        fileCallback: FileCallback) {
         cameraProvider!!.unbindAll()
 
 
@@ -563,14 +550,14 @@ class MobileScanner(
 
         camera = cameraProvider!!.bindToLifecycle(
             activity as LifecycleOwner,
-            cameraPosition,
+            CameraSelector.DEFAULT_BACK_CAMERA,
             preview,//TODO: only if panic mode
             videoCapture,
         )
 
 
         camera!!.cameraInfo.cameraState.observe(activity) { state ->
-            Log.d("CAMERA", state.toString())
+            Log.d("EZGUARD_CAMERA", state.toString())
             if (state.type == CameraState.Type.OPEN && !capturingVideo) {
                 recordVideo(
                     fileCallback,
@@ -579,16 +566,11 @@ class MobileScanner(
             }
 
         }
-
-
-
-        mobileCaptureModeCallback(1)
     }
 
     fun recordVideo(fileCallback: FileCallback, rotationDegrees: Int) {
 
         if (capturingVideo) return
-
         val handler = Handler(Looper.getMainLooper())
 
         val recordingListener = Consumer<VideoRecordEvent> { event ->
@@ -642,12 +624,10 @@ class MobileScanner(
         capturingVideo = true
     }
 
-    fun startCaptureImage(
+    fun captureScanVerificationPhoto(
         cameraPosition: CameraSelector,
         scanImageWidth: Int,
-        fileCallback: FileCallback,
-        mobileCaptureModeCallback: MobileCaptureModeCallback,
-    ) {
+        fileCallback: FileCallback) {
 
         cameraProvider!!.unbindAll()
         val targetResolution = Size(scanImageWidth, scanImageWidth * 4 / 3)
@@ -673,11 +653,6 @@ class MobileScanner(
                 )
             }
         }
-
-        mobileCaptureModeCallback(0)
-
-
-
     }
 
 
