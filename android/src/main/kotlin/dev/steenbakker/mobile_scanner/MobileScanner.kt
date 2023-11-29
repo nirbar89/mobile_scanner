@@ -12,7 +12,6 @@ import android.net.Uri
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
-import android.util.Log
 import android.util.Size
 import android.view.Surface
 import android.view.WindowManager
@@ -34,13 +33,13 @@ import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.common.InputImage
+import dev.steenbakker.mobile_scanner.objects.DetectionMode
 import dev.steenbakker.mobile_scanner.objects.DetectionSpeed
 import dev.steenbakker.mobile_scanner.objects.MobileScannerStartParameters
 import dev.steenbakker.mobile_scanner.utils.YuvToRgbConverter
 import io.flutter.view.TextureRegistry
 import java.io.File
 import java.io.FileOutputStream
-import java.io.IOException
 import java.text.SimpleDateFormat
 import java.util.Locale
 import kotlin.math.roundToInt
@@ -71,6 +70,7 @@ class MobileScanner(
     /// Configurable variables
     var scanWindow: List<Float>? = null
     private var detectionSpeed: DetectionSpeed = DetectionSpeed.NO_DUPLICATES
+    private var detectionMode: DetectionMode = DetectionMode.BARCODES
     private var detectionTimeout: Long = 250
     private var returnImage = false
     private var capturingVideo = false
@@ -241,6 +241,7 @@ class MobileScanner(
         cameraPosition: CameraSelector,
         torch: Boolean,
         detectionSpeed: DetectionSpeed,
+        detectionMode: DetectionMode,
         torchStateCallback: TorchStateCallback,
         zoomScaleStateCallback: ZoomScaleStateCallback,
         mobileScannerStartedCallback: MobileScannerStartedCallback,
@@ -249,21 +250,18 @@ class MobileScanner(
         cameraResolution: Size?
     ) {
         this.detectionSpeed = detectionSpeed
+        this.detectionMode = detectionMode
         this.detectionTimeout = detectionTimeout
         this.returnImage = returnImage
 
         if (camera?.cameraInfo != null && preview != null && textureEntry != null) {
             mobileScannerErrorCallback(AlreadyStarted())
-
             return
         }
 
         lastScanned = null
-        scanner = if (barcodeScannerOptions != null) {
-            BarcodeScanning.getClient(barcodeScannerOptions)
-        } else {
-            BarcodeScanning.getClient()
-        }
+        scanner = barcodeScannerOptions?.let { BarcodeScanning.getClient(it) }
+            ?: BarcodeScanning.getClient()
 
         val cameraProviderFuture = ProcessCameraProvider.getInstance(activity)
         val executor = ContextCompat.getMainExecutor(activity)
@@ -273,7 +271,6 @@ class MobileScanner(
 
             if (cameraProvider == null) {
                 mobileScannerErrorCallback(CameraError())
-
                 return@addListener
             }
 
@@ -283,15 +280,10 @@ class MobileScanner(
 
             // Preview
             val surfaceProvider = Preview.SurfaceProvider { request ->
-                if (isStopped()) {
-                    return@SurfaceProvider
-                }
+                if (isStopped()) return@SurfaceProvider
 
                 val texture = textureEntry!!.surfaceTexture()
-                texture.setDefaultBufferSize(
-                    request.resolution.width,
-                    request.resolution.height
-                )
+                texture.setDefaultBufferSize(request.resolution.width, request.resolution.height)
 
                 val surface = Surface(texture)
                 request.provideSurface(surface, executor) { }
@@ -301,46 +293,50 @@ class MobileScanner(
             val previewBuilder = Preview.Builder()
             preview = previewBuilder.build().apply { setSurfaceProvider(surfaceProvider) }
 
-            // Build the analyzer to be passed on to MLKit
-            val analysisBuilder = ImageAnalysis.Builder()
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            val displayManager =
-                activity.applicationContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
+            if (detectionMode != DetectionMode.NO_DETECTIONS) {
 
-            if (cameraResolution != null) {
-                // TODO: migrate to ResolutionSelector with ResolutionStrategy when upgrading to camera 1.3.0
-                // Override initial resolution
-                analysisBuilder.setTargetResolution(getResolution(cameraResolution))
+                // Build the analyzer to be passed on to MLKit
+                val analysisBuilder = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                val displayManager =
+                    activity.applicationContext.getSystemService(Context.DISPLAY_SERVICE) as DisplayManager
 
-                if (displayListener == null) {
-                    displayListener = object : DisplayManager.DisplayListener {
-                        override fun onDisplayAdded(displayId: Int) {}
+                cameraResolution?.let {
+                    analysisBuilder.setTargetResolution(getResolution(it))
 
-                        override fun onDisplayRemoved(displayId: Int) {}
+                    if (displayListener == null) {
+                        displayListener = object : DisplayManager.DisplayListener {
+                            override fun onDisplayAdded(displayId: Int) {}
 
-                        override fun onDisplayChanged(displayId: Int) {
-                            analysisBuilder.setTargetResolution(getResolution(cameraResolution))
+                            override fun onDisplayRemoved(displayId: Int) {}
+
+                            override fun onDisplayChanged(displayId: Int) {
+                                analysisBuilder.setTargetResolution(getResolution(cameraResolution))
+                            }
                         }
-                    }
 
-                    displayManager.registerDisplayListener(
-                        displayListener, null,
-                    )
+                        displayManager.registerDisplayListener(
+                            displayListener, null,
+                        )
+                    }
                 }
+
+                analysis = analysisBuilder.build().apply { setAnalyzer(executor, captureOutput) }
             }
 
-            analysis = analysisBuilder.build().apply { setAnalyzer(executor, captureOutput) }
-
             try {
+                val cameraUseCases = mutableListOf<UseCase?>(preview)
+                if (detectionMode != DetectionMode.NO_DETECTIONS) {
+                    cameraUseCases.add(analysis)
+                }
+
                 camera = cameraProvider?.bindToLifecycle(
                     activity as LifecycleOwner,
                     cameraPosition,
-                    preview,
-                    analysis
+                    *cameraUseCases.toTypedArray()
                 )
             } catch (exception: Exception) {
                 mobileScannerErrorCallback(NoCamera())
-
                 return@addListener
             }
 
@@ -362,7 +358,8 @@ class MobileScanner(
                 }
             }
 
-            val resolution = analysis!!.resolutionInfo!!.resolution
+            val resolution =
+                if (detectionMode != DetectionMode.NO_DETECTIONS) analysis!!.resolutionInfo!!.resolution else preview!!.resolutionInfo!!.resolution
             val width = resolution.width.toDouble()
             val height = resolution.height.toDouble()
             val portrait = (camera?.cameraInfo?.sensorRotationDegrees ?: 0) % 180 == 0
@@ -376,7 +373,6 @@ class MobileScanner(
                 )
             )
         }, executor)
-
     }
 
     /**
@@ -412,8 +408,6 @@ class MobileScanner(
         videoCapture = null
         recording = null
         capturingVideo = false
-//        capturingImage = false
-//        barcodeDetected = false
     }
 
     private fun isStopped() = camera == null && preview == null
@@ -472,31 +466,22 @@ class MobileScanner(
     }
 
     private fun saveBarcodeBitmap(bitmap: Bitmap): String? {
-        val imageFile: File?
-        try {
+        return try {
             val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
                 .format(System.currentTimeMillis())
+            val imageFile = File.createTempFile(name, ".jpg", outputDirectory)
 
-            imageFile = File.createTempFile(name, ".jpg", outputDirectory)
+            FileOutputStream(imageFile).use { out ->
+                val scaledBitmap = resizeBitmap(bitmap, 320, 240)
+                scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, out)
+                scaledBitmap.recycle()
+            }
+
+            imageFile.absolutePath
         } catch (e: Exception) {
-            mobileScannerErrorCallback(
-                e.localizedMessage ?: e.toString()
-            )
-            return null
+            mobileScannerErrorCallback(e.localizedMessage ?: e.toString())
+            null
         }
-        val out = FileOutputStream(imageFile)
-        try {
-            val scaledBitmap = resizeBitmap(bitmap, 320, 240)
-            scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, out)
-            scaledBitmap.recycle()
-            out.flush()
-            out.close()
-        } catch (e: IOException) {
-            mobileScannerErrorCallback(
-                e.localizedMessage ?: e.toString()
-            )
-        }
-        return imageFile.absolutePath
     }
 
 
@@ -529,11 +514,8 @@ class MobileScanner(
     }
 
 
-
-    fun initVideoCamera (
-        fileCallback: FileCallback) {
-        cameraProvider!!.unbindAll()
-
+    fun initVideoCamera(fileCallback: FileCallback) {
+        cameraProvider?.unbindAll()
 
         val selector = QualitySelector
             .from(
@@ -551,26 +533,20 @@ class MobileScanner(
         camera = cameraProvider!!.bindToLifecycle(
             activity as LifecycleOwner,
             CameraSelector.DEFAULT_BACK_CAMERA,
-            preview,//TODO: only if panic mode
-            videoCapture,
+            preview, //TODO: only if panic mode
+            videoCapture
         )
 
-
-        camera!!.cameraInfo.cameraState.observe(activity) { state ->
-            Log.d("EZGUARD_CAMERA", state.toString())
+        camera?.cameraInfo?.cameraState?.observe(activity) { state ->
             if (state.type == CameraState.Type.OPEN && !capturingVideo) {
-                recordVideo(
-                    fileCallback,
-                    camera!!.cameraInfo.sensorRotationDegrees
-                )
+                recordVideo(fileCallback, camera?.cameraInfo?.sensorRotationDegrees ?: 0)
             }
-
         }
     }
 
     fun recordVideo(fileCallback: FileCallback, rotationDegrees: Int) {
-
         if (capturingVideo) return
+
         val handler = Handler(Looper.getMainLooper())
 
         val recordingListener = Consumer<VideoRecordEvent> { event ->
@@ -580,125 +556,105 @@ class MobileScanner(
                 }
 
                 is VideoRecordEvent.Finalize -> {
-                    if (!event.hasError()) {
+                    handler.removeCallbacksAndMessages(null)
+                    if (!event.hasError() || event.error == VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED) {
                         fileCallback(event.outputResults.outputUri.path, 1, rotationDegrees)
                     } else {
-                        when (event.error) {
-                            VideoRecordEvent.Finalize.ERROR_FILE_SIZE_LIMIT_REACHED -> {
-                                handler.removeCallbacksAndMessages(null)
-                                fileCallback(
-                                    event.outputResults.outputUri.path,
-                                    1,
-                                    rotationDegrees
-                                )
-                            }
-
-                            else -> {
-                                fileCallback(null, null, null)
-                            }
-                        }
-
+                        fileCallback(null, null, null)
                     }
                     capturingVideo = false
                 }
             }
         }
-        // create and start a new recording session
-        val name = SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SSS", Locale.US)
-            .format(System.currentTimeMillis())
+
+        val name = SimpleDateFormat(
+            "yyyy-MM-dd-HH-mm-ss-SSS",
+            Locale.US
+        ).format(System.currentTimeMillis())
         val outputFile = File.createTempFile(name, ".mp4", outputDirectory)
-        val fileOutputOptions = FileOutputOptions.Builder(outputFile).setFileSizeLimit(2621440)
-            .build()//TODO: from server
+        val fileOutputOptions =
+            FileOutputOptions.Builder(outputFile).setFileSizeLimit(2621440).build()
+
         if (ActivityCompat.checkSelfPermission(
                 activity,
                 Manifest.permission.RECORD_AUDIO
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             fileCallback(null, null, null)
+            capturingVideo = false
             return
         }
+
         recording = videoCapture?.output
             ?.prepareRecording(activity, fileOutputOptions)
             ?.withAudioEnabled()
             ?.start(ContextCompat.getMainExecutor(activity), recordingListener)
+
         capturingVideo = true
     }
 
     fun captureScanVerificationPhoto(
         cameraPosition: CameraSelector,
         scanImageWidth: Int,
-        fileCallback: FileCallback) {
+        fileCallback: FileCallback
+    ) {
+        cameraProvider?.unbindAll()
 
-        cameraProvider!!.unbindAll()
         val targetResolution = Size(scanImageWidth, scanImageWidth * 4 / 3)
         imageCapture = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
             .setTargetResolution(getResolution(targetResolution))
             .build()
+
         outputDirectory = activity.filesDir
 
         camera = cameraProvider!!.bindToLifecycle(
             activity as LifecycleOwner,
             cameraPosition,
             preview,
-            imageCapture,
+            imageCapture
         )
 
-        camera!!.cameraInfo.cameraState.observe(activity) { state ->
+        camera?.cameraInfo?.cameraState?.observe(activity) { state ->
             if (state.type == CameraState.Type.OPEN && !capturingImage) {
                 capturingImage = true
-                captureImage(
-                    fileCallback,
-                    camera!!.cameraInfo.sensorRotationDegrees
-                )
+                captureImage(fileCallback, camera?.cameraInfo?.sensorRotationDegrees ?: 0)
             }
         }
     }
 
-
     private fun captureImage(fileCallback: FileCallback, rotationDegrees: Int) {
-        val capture = imageCapture
         try {
-            if (capture == null) {
+            imageCapture?.let { capture ->
+                val photoFile = File(
+                    outputDirectory,
+                    SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SS", Locale.getDefault())
+                        .format(System.currentTimeMillis()) + ".jpg"
+                )
+
+                val outputOptions = ImageCapture.OutputFileOptions.Builder(photoFile).build()
+
+                capture.takePicture(
+                    outputOptions, ContextCompat.getMainExecutor(activity),
+                    object : ImageCapture.OnImageSavedCallback {
+                        override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
+                            fileCallback(Uri.fromFile(photoFile).path, 0, rotationDegrees)
+                            capturingImage = false
+                        }
+
+                        override fun onError(exception: ImageCaptureException) {
+                            fileCallback(null, null, null)
+                            capturingImage = false
+                        }
+                    }
+                )
+            } ?: run {
                 fileCallback(null, null, null)
                 capturingImage = false
-                return
             }
-
-            val photoFile = File(
-                outputDirectory,
-                SimpleDateFormat("yyyy-MM-dd-HH-mm-ss-SS", Locale.getDefault())
-                    .format(
-                        System
-                            .currentTimeMillis()
-                    ) + ".jpg"
-            )
-
-
-            val outputOptions = ImageCapture.OutputFileOptions
-                .Builder(photoFile).build()
-
-
-            capture.takePicture(
-                outputOptions, ContextCompat.getMainExecutor(activity),
-                object : ImageCapture.OnImageSavedCallback {
-                    override fun onImageSaved(outputFileResults: ImageCapture.OutputFileResults) {
-                        val savedUri = Uri.fromFile(photoFile)
-                        fileCallback(savedUri.path, 0, rotationDegrees)
-                        capturingImage = false
-                    }
-
-                    override fun onError(exception: ImageCaptureException) {
-                        fileCallback(null, null, null)
-                        capturingImage = false
-                    }
-                }
-            )
         } catch (e: Exception) {
             capturingImage = false
-            mobileScannerErrorCallback(
-                e.localizedMessage ?: e.toString()
-            )
+            mobileScannerErrorCallback(e.localizedMessage ?: e.toString())
         }
     }
 

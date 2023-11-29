@@ -136,7 +136,7 @@ public class MobileScannerPlugin: NSObject, FlutterPlugin {
         let formats: Array<Int> = (call.arguments as! Dictionary<String, Any?>)["formats"] as? Array ?? []
         let returnImage: Bool = (call.arguments as! Dictionary<String, Any?>)["returnImage"] as? Bool ?? false
         let speed: Int = (call.arguments as! Dictionary<String, Any?>)["speed"] as? Int ?? 0
-        let detectMode: Int = (call.arguments as! Dictionary<String, Any?>)["mode"] as? Int ?? 1
+        let detectMode: Int = (call.arguments as! Dictionary<String, Any?>)["detectionMode"] as? Int ?? 1
         let timeoutMs: Int = (call.arguments as! Dictionary<String, Any?>)["timeout"] as? Int ?? 0
               self.mobileScanner.timeoutSeconds = Double(timeoutMs) / Double(1000)
 

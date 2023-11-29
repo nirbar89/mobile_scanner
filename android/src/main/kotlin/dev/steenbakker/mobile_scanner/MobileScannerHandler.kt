@@ -9,6 +9,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ExperimentalGetImage
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import dev.steenbakker.mobile_scanner.objects.BarcodeFormats
+import dev.steenbakker.mobile_scanner.objects.DetectionMode
 import dev.steenbakker.mobile_scanner.objects.DetectionSpeed
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
 import io.flutter.plugin.common.BinaryMessenger
@@ -172,6 +173,7 @@ class MobileScannerHandler(
         val formats: List<Int>? = call.argument<List<Int>>("formats")
         val returnImage: Boolean = call.argument<Boolean>("returnImage") ?: false
         val speed: Int = call.argument<Int>("speed") ?: 1
+        val mode: Int = call.argument<Int>("detectionMode") ?: 1
         val timeout: Int = call.argument<Int>("timeout") ?: 250
         val cameraResolutionValues: List<Int>? = call.argument<List<Int>>("cameraResolution")
         val cameraResolution: Size? = if (cameraResolutionValues != null) {
@@ -201,6 +203,7 @@ class MobileScannerHandler(
             if (facing == 0) CameraSelector.DEFAULT_FRONT_CAMERA else CameraSelector.DEFAULT_BACK_CAMERA
 
         val detectionSpeed: DetectionSpeed = DetectionSpeed.values().first { it.intValue == speed }
+        val detectionMode: DetectionMode = DetectionMode.values().first { it.intValue == mode }
 
         mobileScanner!!.start(
             barcodeScannerOptions,
@@ -208,6 +211,7 @@ class MobileScannerHandler(
             position,
             torch,
             detectionSpeed,
+            detectionMode,
             torchStateCallback,
             zoomScaleStateCallback,
             mobileScannerStartedCallback = {

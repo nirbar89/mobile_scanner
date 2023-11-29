@@ -18,7 +18,7 @@ class TestScanner extends StatefulWidget {
 
 class TestScannerState
     extends State<TestScanner> {
-  late MobileScannerController controller = MobileScannerController(returnImage: widget.returnImage, formats: [BarcodeFormat.all], cameraResolution: const Size(640,480));
+  late MobileScannerController controller = MobileScannerController(returnImage: widget.returnImage, formats: [BarcodeFormat.all], detectionMode: DetectionMode.barcodes, cameraResolution: const Size(640,480));
   Barcode? barcode;
   BarcodeCapture? capture;
   int index = 0;

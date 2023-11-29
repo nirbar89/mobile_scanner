@@ -8,7 +8,6 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
-import 'package:mobile_scanner/src/enums/detection_mode.dart';
 
 /// The [MobileScannerController] holds all the logic of this plugin,
 /// where as the [MobileScanner] class is the frontend of this plugin.
@@ -154,7 +153,7 @@ class MobileScannerController {
     arguments['speed'] = detectionSpeed.rawValue;
     arguments['timeout'] = detectionTimeoutMs;
     arguments['returnImage'] = returnImage;
-    arguments['mode'] = detectionMode.rawValue;
+    arguments['detectionMode'] = detectionMode.rawValue;
 
 
     /*    if (scanWindow != null) {
